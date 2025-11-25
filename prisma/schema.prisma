@@ -1,0 +1,259 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// Enum for roles
+enum RoleEnum {
+  ADMIN
+  COORDINADOR
+  DOCENTE
+  ESTUDIANTE
+}
+
+// Enum for thesis status
+enum ThesisStatus {
+  PROPUESTA
+  EN_DESARROLLO
+  EN_REVISION
+  OBSERVADA
+  APROBADA
+  SUSTENTADA
+  FINALIZADA
+}
+
+// Enum for academic degree
+enum AcademicDegree {
+  BACHILLER
+  LICENCIATURA
+  MAESTRIA
+  DOCTORADO
+}
+
+// User model
+model User {
+  id                      String         @id @default(uuid())
+  email                   String         @unique
+  personalEmail           String?        // Email personal adicional
+  password                String
+  firstName               String
+  lastName                String
+  documentNumber          String?        @unique // DNI, passport, etc.
+  phone                   String?
+  isEmailVerified         Boolean        @default(false)
+  emailVerificationToken  String?
+  passwordResetToken      String?
+  passwordResetExpires    DateTime?
+  isActive                Boolean        @default(true)
+  createdAt               DateTime       @default(now())
+  updatedAt               DateTime       @updatedAt
+
+  // Relations
+  roles                   Role[]
+  refreshTokens           RefreshToken[]
+  enrollments             Enrollment[]   // Estudiante puede estar en múltiples carreras
+  thesesAsAuthor          Thesis[]       @relation("ThesisAuthor")
+  thesesAsAdvisor         Thesis[]       @relation("ThesisAdvisor")
+  thesesAsCoAdvisor       Thesis[]       @relation("ThesisCoAdvisor")
+  comments                Comment[]
+  notifications           Notification[]
+
+  @@map("users")
+}
+
+// Role model
+model Role {
+  id          String    @id @default(uuid())
+  name        RoleEnum  @unique
+  description String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  // Relations
+  users       User[]
+
+  @@map("roles")
+}
+
+// RefreshToken model
+model RefreshToken {
+  id        String   @id @default(uuid())
+  token     String
+  expiresAt DateTime
+  isRevoked Boolean  @default(false)
+  userId    String
+  createdAt DateTime @default(now())
+
+  // Relations
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("refresh_tokens")
+}
+
+// Faculty model
+model Faculty {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  code        String   @unique
+  description String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  careers     Career[]
+
+  @@map("faculties")
+}
+
+// Career model (Carrera)
+model Career {
+  id          String   @id @default(uuid())
+  name        String
+  code        String   @unique
+  description String?
+  facultyId   String
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  faculty     Faculty      @relation(fields: [facultyId], references: [id])
+  enrollments Enrollment[]
+  theses      Thesis[]
+
+  @@map("careers")
+}
+
+// Enrollment model (Matrícula/Inscripción de estudiante en una carrera)
+model Enrollment {
+  id                    String    @id @default(uuid())
+  userId                String
+  careerId              String
+  studentCode           String    @unique // Código de estudiante (username de API: "20137013", "13121013")
+  creditsApproved       Decimal?  // totalCreditsApproved de API
+  lastAcademicPeriod    String?   // Último período matriculado (ej: "2019-1")
+  academicPeriodId      String?   // ID del período académico de la API
+  enrollmentDate        DateTime  @default(now())
+  isActive              Boolean   @default(true)
+  syncedFromExternalApi Boolean   @default(false) // Indica si vino de API externa
+  externalApiData       String?   // JSON con datos completos de la API (opcional)
+  lastSyncAt            DateTime? // Última sincronización con API externa
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  // Relations
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  career       Career   @relation(fields: [careerId], references: [id])
+
+  @@unique([userId, careerId]) // Un usuario solo puede estar inscrito una vez por carrera
+  @@map("enrollments")
+}
+
+// Thesis model
+model Thesis {
+  id                String         @id @default(uuid())
+  title             String
+  description       String?
+  status            ThesisStatus   @default(PROPUESTA)
+  academicDegree    AcademicDegree
+  careerId          String
+  authorId          String
+  advisorId         String
+  coAdvisorId       String?
+  startDate         DateTime       @default(now())
+  proposalDate      DateTime?
+  approvalDate      DateTime?
+  defenseDate       DateTime?
+  finalDocument     String?        // URL o path al documento final
+  isActive          Boolean        @default(true)
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  // Relations
+  career            Career         @relation(fields: [careerId], references: [id])
+  author            User           @relation("ThesisAuthor", fields: [authorId], references: [id])
+  advisor           User           @relation("ThesisAdvisor", fields: [advisorId], references: [id])
+  coAdvisor         User?          @relation("ThesisCoAdvisor", fields: [coAdvisorId], references: [id])
+  milestones        Milestone[]
+  comments          Comment[]
+  documents         Document[]
+
+  @@map("theses")
+}
+
+// Milestone model (Hitos/Etapas de la tesis)
+model Milestone {
+  id          String    @id @default(uuid())
+  thesisId    String
+  title       String
+  description String?
+  dueDate     DateTime?
+  completedAt DateTime?
+  isCompleted Boolean   @default(false)
+  order       Int
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  // Relations
+  thesis      Thesis    @relation(fields: [thesisId], references: [id], onDelete: Cascade)
+
+  @@map("milestones")
+}
+
+// Comment model (Comentarios/Observaciones sobre la tesis)
+model Comment {
+  id        String   @id @default(uuid())
+  thesisId  String
+  userId    String
+  content   String
+  isPublic  Boolean  @default(true) // Si es visible para el estudiante o solo para docentes
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  thesis    Thesis   @relation(fields: [thesisId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id])
+
+  @@map("comments")
+}
+
+// Document model (Documentos adjuntos a la tesis)
+model Document {
+  id          String   @id @default(uuid())
+  thesisId    String
+  title       String
+  description String?
+  fileUrl     String
+  fileType    String
+  fileSize    Int
+  uploadedAt  DateTime @default(now())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  thesis      Thesis   @relation(fields: [thesisId], references: [id], onDelete: Cascade)
+
+  @@map("documents")
+}
+
+// Notification model
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  title     String
+  message   String
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  // Relations
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notifications")
+}
