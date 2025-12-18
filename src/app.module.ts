@@ -7,6 +7,21 @@ import { UsersModule } from './users/users.module';
 import { AuthModule } from './auth/auth.module';
 import { MailModule } from './mail/mail.module';
 import { PrismaModule } from './prisma/prisma.module';
+import { FacultiesModule } from './faculties/faculties.module';
+import { CareersModule } from './careers/careers.module';
+import { EnrollmentsModule } from './enrollments/enrollments.module';
+import { ThesesModule } from './theses/theses.module';
+import { ReviewsModule } from './reviews/reviews.module';
+import { DeadlinesModule } from './deadlines/deadlines.module';
+import { SystemModulesModule } from './system-modules/system-modules.module';
+import { MilestonesModule } from './milestones/milestones.module';
+import { DocumentsModule } from './documents/documents.module';
+import { CommentsModule } from './comments/comments.module';
+import { StatisticsModule } from './statistics/statistics.module';
+import { NotificationsModule } from './notifications/notifications.module';
+import { ResolutionsModule } from './resolutions/resolutions.module';
+import { AnnotationsModule } from './annotations/annotations.module';
+import { SignedDocumentsModule } from './signed-documents/signed-documents.module';
 
 @Module({
   imports: [
@@ -35,6 +50,21 @@ import { PrismaModule } from './prisma/prisma.module';
     UsersModule,
     AuthModule,
     MailModule,
+    FacultiesModule,
+    CareersModule,
+    EnrollmentsModule,
+    ThesesModule,
+    ReviewsModule,
+    DeadlinesModule,
+    SystemModulesModule,
+    MilestonesModule,
+    DocumentsModule,
+    CommentsModule,
+    StatisticsModule,
+    NotificationsModule,
+    ResolutionsModule,
+    AnnotationsModule,
+    SignedDocumentsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

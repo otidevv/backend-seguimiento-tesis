@@ -1,4 +1,3 @@
-import { PartialType } from '@nestjs/mapped-types';
 import {
   IsBoolean,
   IsOptional,
@@ -8,12 +7,15 @@ import {
   IsEmail,
   MinLength,
 } from 'class-validator';
-import { CreateUserDto } from './create-user.dto';
 
 export class UpdateUserDto {
   @IsEmail()
   @IsOptional()
   email?: string;
+
+  @IsEmail()
+  @IsOptional()
+  personalEmail?: string | null;
 
   @IsString()
   @MinLength(8)
@@ -28,6 +30,14 @@ export class UpdateUserDto {
   @IsOptional()
   lastName?: string;
 
+  @IsString()
+  @IsOptional()
+  documentNumber?: string | null;
+
+  @IsString()
+  @IsOptional()
+  phone?: string | null;
+
   @IsBoolean()
   @IsOptional()
   isActive?: boolean;
@@ -40,4 +50,8 @@ export class UpdateUserDto {
   @IsUUID('4', { each: true })
   @IsOptional()
   roleIds?: string[];
+
+  @IsUUID('4')
+  @IsOptional()
+  facultyId?: string | null;
 }

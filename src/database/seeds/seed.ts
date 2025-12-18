@@ -1,4 +1,4 @@
-import { PrismaClient, RoleEnum, AcademicDegree } from '@prisma/client';
+import { PrismaClient, RoleEnum, AcademicDegree, ThesisStatus, PermissionAction } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { Pool } from 'pg';
 import * as dotenv from 'dotenv';
@@ -60,57 +60,377 @@ async function seed() {
     });
     console.log(`✅ Rol creado: ${estudianteRole.name}`);
 
+    console.log('\n📝 Creando módulos del sistema...');
+    // ============ MÓDULOS DEL SISTEMA ============
+    const moduleDashboard = await prisma.module.create({
+      data: {
+        name: 'dashboard',
+        displayName: 'Dashboard',
+        description: 'Panel principal con estadísticas y resumen',
+        icon: 'dashboard',
+        route: '/dashboard',
+        order: 1,
+      },
+    });
+    console.log(`✅ Módulo creado: ${moduleDashboard.displayName}`);
+
+    const moduleMyThesis = await prisma.module.create({
+      data: {
+        name: 'my-thesis',
+        displayName: 'Mis Tesis',
+        description: 'Gestión de mis proyectos de tesis',
+        icon: 'file-description',
+        route: '/dashboard/mis-tesis',
+        order: 2,
+      },
+    });
+    console.log(`✅ Módulo creado: ${moduleMyThesis.displayName}`);
+
+    const moduleAdvisees = await prisma.module.create({
+      data: {
+        name: 'advisees',
+        displayName: 'Mis Asesorados',
+        description: 'Estudiantes bajo mi asesoría',
+        icon: 'user-star',
+        route: '/dashboard/mis-asesorados',
+        order: 3,
+      },
+    });
+    console.log(`✅ Módulo creado: ${moduleAdvisees.displayName}`);
+
+    const moduleTheses = await prisma.module.create({
+      data: {
+        name: 'theses',
+        displayName: 'Gestión de Tesis',
+        description: 'Administración de proyectos de tesis',
+        icon: 'file-description',
+        route: '/dashboard/tesis',
+        order: 4,
+      },
+    });
+    console.log(`✅ Módulo creado: ${moduleTheses.displayName}`);
+
+    const moduleReviews = await prisma.module.create({
+      data: {
+        name: 'reviews',
+        displayName: 'Revisiones',
+        description: 'Evaluación de tesis como jurado',
+        icon: 'checklist',
+        route: '/dashboard/revisiones',
+        order: 5,
+      },
+    });
+    console.log(`✅ Módulo creado: ${moduleReviews.displayName}`);
+
+    const moduleUsers = await prisma.module.create({
+      data: {
+        name: 'users',
+        displayName: 'Usuarios',
+        description: 'Administración de usuarios del sistema',
+        icon: 'users',
+        route: '/dashboard/usuarios',
+        order: 6,
+      },
+    });
+    console.log(`✅ Módulo creado: ${moduleUsers.displayName}`);
+
+    const modulePermissions = await prisma.module.create({
+      data: {
+        name: 'permissions',
+        displayName: 'Permisos',
+        description: 'Gestión de permisos y módulos del sistema',
+        icon: 'shield-check',
+        route: '/dashboard/permisos',
+        order: 7,
+      },
+    });
+    console.log(`✅ Módulo creado: ${modulePermissions.displayName}`);
+
+    const moduleFaculties = await prisma.module.create({
+      data: {
+        name: 'faculties',
+        displayName: 'Facultades',
+        description: 'Gestión de facultades',
+        icon: 'building',
+        route: '/dashboard/facultades',
+        order: 8,
+      },
+    });
+    console.log(`✅ Módulo creado: ${moduleFaculties.displayName}`);
+
+    const moduleCareers = await prisma.module.create({
+      data: {
+        name: 'careers',
+        displayName: 'Carreras',
+        description: 'Gestión de carreras',
+        icon: 'school',
+        route: '/dashboard/carreras',
+        order: 9,
+      },
+    });
+    console.log(`✅ Módulo creado: ${moduleCareers.displayName}`);
+
+    const moduleEnrollments = await prisma.module.create({
+      data: {
+        name: 'enrollments',
+        displayName: 'Inscripciones',
+        description: 'Gestión de inscripciones de estudiantes',
+        icon: 'clipboard-list',
+        route: '/dashboard/inscripciones',
+        order: 10,
+      },
+    });
+    console.log(`✅ Módulo creado: ${moduleEnrollments.displayName}`);
+
+    const moduleDeadlines = await prisma.module.create({
+      data: {
+        name: 'deadlines',
+        displayName: 'Plazos',
+        description: 'Gestión de plazos y fechas límite',
+        icon: 'calendar-event',
+        route: '/dashboard/plazos',
+        order: 11,
+      },
+    });
+    console.log(`✅ Módulo creado: ${moduleDeadlines.displayName}`);
+
+    const moduleReports = await prisma.module.create({
+      data: {
+        name: 'reports',
+        displayName: 'Reportes',
+        description: 'Reportes y estadísticas del sistema',
+        icon: 'report-analytics',
+        route: '/dashboard/reportes',
+        order: 12,
+      },
+    });
+    console.log(`✅ Módulo creado: ${moduleReports.displayName}`);
+
+    console.log('\n📝 Asignando permisos a roles...');
+    // ============ PERMISOS POR ROL ============
+
+    // ADMIN: Acceso total a todos los módulos
+    const adminModules = [
+      moduleDashboard, moduleUsers, modulePermissions, moduleFaculties,
+      moduleCareers, moduleEnrollments, moduleTheses, moduleDeadlines, moduleReports
+    ];
+    for (const module of adminModules) {
+      await prisma.roleModulePermission.create({
+        data: { roleId: adminRole.id, moduleId: module.id, action: PermissionAction.MANAGE },
+      });
+    }
+    console.log(`✅ Permisos ADMIN asignados (${adminModules.length} módulos con MANAGE)`);
+
+    // COORDINADOR: Dashboard, Tesis (gestión), Carreras, Inscripciones, Plazos, Reportes, Revisiones
+    const coordinadorPermissions = [
+      { moduleId: moduleDashboard.id, action: PermissionAction.READ },
+      { moduleId: moduleTheses.id, action: PermissionAction.MANAGE },
+      { moduleId: moduleCareers.id, action: PermissionAction.READ },
+      { moduleId: moduleEnrollments.id, action: PermissionAction.MANAGE },
+      { moduleId: moduleDeadlines.id, action: PermissionAction.MANAGE },
+      { moduleId: moduleReports.id, action: PermissionAction.READ },
+      { moduleId: moduleReviews.id, action: PermissionAction.MANAGE },
+    ];
+    for (const perm of coordinadorPermissions) {
+      await prisma.roleModulePermission.create({
+        data: { roleId: coordinadorRole.id, moduleId: perm.moduleId, action: perm.action },
+      });
+    }
+    console.log(`✅ Permisos COORDINADOR asignados (${coordinadorPermissions.length} permisos)`);
+
+    // DOCENTE: Dashboard, Asesorados, Revisiones, Tesis (ver)
+    const docentePermissions = [
+      { moduleId: moduleDashboard.id, action: PermissionAction.READ },
+      { moduleId: moduleAdvisees.id, action: PermissionAction.MANAGE },
+      { moduleId: moduleReviews.id, action: PermissionAction.MANAGE },
+      { moduleId: moduleTheses.id, action: PermissionAction.READ },
+    ];
+    for (const perm of docentePermissions) {
+      await prisma.roleModulePermission.create({
+        data: { roleId: docenteRole.id, moduleId: perm.moduleId, action: perm.action },
+      });
+    }
+    console.log(`✅ Permisos DOCENTE asignados (${docentePermissions.length} permisos)`);
+
+    // ESTUDIANTE: Dashboard, Mi Tesis
+    const estudiantePermissions = [
+      { moduleId: moduleDashboard.id, action: PermissionAction.READ },
+      { moduleId: moduleMyThesis.id, action: PermissionAction.MANAGE },
+    ];
+    for (const perm of estudiantePermissions) {
+      await prisma.roleModulePermission.create({
+        data: { roleId: estudianteRole.id, moduleId: perm.moduleId, action: perm.action },
+      });
+    }
+    console.log(`✅ Permisos ESTUDIANTE asignados (${estudiantePermissions.length} permisos)`);
+
     console.log('\n📝 Creando facultades...');
-    // Create faculties
+    // Create faculties (datos reales de UNAMAD)
     const facultadIngenieria = await prisma.faculty.create({
       data: {
         name: 'Facultad de Ingeniería',
-        code: 'FI',
-        description: 'Facultad de Ingeniería y Tecnología',
+        code: 'IN',
+        externalName: 'INGENIERIA', // Nombre exacto de la API externa
+        description: 'Facultad de Ingeniería',
       },
     });
     console.log(`✅ Facultad creada: ${facultadIngenieria.name}`);
 
-    const facultadCiencias = await prisma.faculty.create({
+    const facultadCienciasEmpresariales = await prisma.faculty.create({
       data: {
-        name: 'Facultad de Ciencias',
-        code: 'FC',
-        description: 'Facultad de Ciencias Básicas',
+        name: 'Facultad de Ciencias Empresariales',
+        code: 'EA',
+        externalName: 'CIENCIAS EMPRESARIALES', // Nombre exacto de la API externa
+        description: 'Facultad de Ciencias Empresariales',
       },
     });
-    console.log(`✅ Facultad creada: ${facultadCiencias.name}`);
+    console.log(`✅ Facultad creada: ${facultadCienciasEmpresariales.name}`);
+
+    const facultadEducacion = await prisma.faculty.create({
+      data: {
+        name: 'Facultad de Educación',
+        code: 'ED',
+        externalName: 'EDUCACIÓN', // Nombre exacto de la API externa
+        description: 'Facultad de Educación',
+      },
+    });
+    console.log(`✅ Facultad creada: ${facultadEducacion.name}`);
 
     console.log('\n📝 Creando carreras...');
-    // Create careers
+    // ============ CARRERAS DE INGENIERÍA ============
     const carreraInformatica = await prisma.career.create({
       data: {
-        name: 'Ingeniería de Sistemas',
+        name: 'Ingeniería de Sistemas e Informática',
         code: 'IS',
-        description: 'Carrera de Ingeniería de Sistemas y Computación',
+        externalName: 'INGENIERÍA DE SISTEMAS E INFORMÁTICA',
+        description: 'Carrera de Ingeniería de Sistemas e Informática',
         facultyId: facultadIngenieria.id,
       },
     });
     console.log(`✅ Carrera creada: ${carreraInformatica.name}`);
 
-    const carreraElectronica = await prisma.career.create({
+    const carreraAgroindustrial = await prisma.career.create({
       data: {
-        name: 'Ingeniería Electrónica',
-        code: 'IE',
-        description: 'Carrera de Ingeniería Electrónica',
+        name: 'Ingeniería Agroindustrial',
+        code: 'IA',
+        externalName: 'INGENIERÍA AGROINDUSTRIAL',
+        description: 'Carrera de Ingeniería Agroindustrial',
         facultyId: facultadIngenieria.id,
       },
     });
-    console.log(`✅ Carrera creada: ${carreraElectronica.name}`);
+    console.log(`✅ Carrera creada: ${carreraAgroindustrial.name}`);
 
-    const carreraMatematica = await prisma.career.create({
+    const carreraForestal = await prisma.career.create({
       data: {
-        name: 'Matemática',
-        code: 'MAT',
-        description: 'Carrera de Matemática',
-        facultyId: facultadCiencias.id,
+        name: 'Ingeniería Forestal y Medio Ambiente',
+        code: 'IF',
+        externalName: 'INGENIERÍA FORESTAL Y MEDIO AMBIENTE',
+        description: 'Carrera de Ingeniería Forestal y Medio Ambiente',
+        facultyId: facultadIngenieria.id,
       },
     });
-    console.log(`✅ Carrera creada: ${carreraMatematica.name}`);
+    console.log(`✅ Carrera creada: ${carreraForestal.name}`);
+
+    const carreraVeterinaria = await prisma.career.create({
+      data: {
+        name: 'Medicina Veterinaria y Zootecnia',
+        code: 'MV',
+        externalName: 'MEDICINA VETERINARIA - ZOOTECNIA',
+        description: 'Carrera de Medicina Veterinaria y Zootecnia',
+        facultyId: facultadIngenieria.id,
+      },
+    });
+    console.log(`✅ Carrera creada: ${carreraVeterinaria.name}`);
+
+    // ============ CARRERAS DE CIENCIAS EMPRESARIALES ============
+    const carreraContabilidad = await prisma.career.create({
+      data: {
+        name: 'Contabilidad y Finanzas',
+        code: 'CF',
+        externalName: 'CONTABILIDAD Y FINANZAS',
+        description: 'Carrera de Contabilidad y Finanzas',
+        facultyId: facultadCienciasEmpresariales.id,
+      },
+    });
+    console.log(`✅ Carrera creada: ${carreraContabilidad.name}`);
+
+    const carreraAdministracion = await prisma.career.create({
+      data: {
+        name: 'Administración y Negocios Internacionales',
+        code: 'AN',
+        externalName: 'ADMINISTRACIÓN Y NEGOCIOS INTERNACIONALES',
+        description: 'Carrera de Administración y Negocios Internacionales',
+        facultyId: facultadCienciasEmpresariales.id,
+      },
+    });
+    console.log(`✅ Carrera creada: ${carreraAdministracion.name}`);
+
+    const carreraEcoturismo = await prisma.career.create({
+      data: {
+        name: 'Ecoturismo',
+        code: 'EC',
+        externalName: 'ECOTURISMO',
+        description: 'Carrera de Ecoturismo',
+        facultyId: facultadCienciasEmpresariales.id,
+      },
+    });
+    console.log(`✅ Carrera creada: ${carreraEcoturismo.name}`);
+
+    // ============ CARRERAS DE EDUCACIÓN ============
+    const carreraDerecho = await prisma.career.create({
+      data: {
+        name: 'Derecho y Ciencias Políticas',
+        code: 'DC',
+        externalName: 'DERECHO Y CIENCIAS POLÍTICAS',
+        description: 'Carrera de Derecho y Ciencias Políticas',
+        facultyId: facultadEducacion.id,
+      },
+    });
+    console.log(`✅ Carrera creada: ${carreraDerecho.name}`);
+
+    const carreraEducacionInicial = await prisma.career.create({
+      data: {
+        name: 'Educación Inicial y Especial',
+        code: 'EI',
+        externalName: 'EDUCACIÓN ESPECIALIDAD INICIAL Y ESPECIAL',
+        description: 'Carrera de Educación Especialidad Inicial y Especial',
+        facultyId: facultadEducacion.id,
+      },
+    });
+    console.log(`✅ Carrera creada: ${carreraEducacionInicial.name}`);
+
+    const carreraEducacionMatematica = await prisma.career.create({
+      data: {
+        name: 'Educación Matemática y Computación',
+        code: 'EM',
+        externalName: 'EDUCACIÓN ESPECIALIDAD MATEMÁTICA Y COMPUTACIÓN',
+        description: 'Carrera de Educación Especialidad Matemática y Computación',
+        facultyId: facultadEducacion.id,
+      },
+    });
+    console.log(`✅ Carrera creada: ${carreraEducacionMatematica.name}`);
+
+    const carreraEducacionPrimaria = await prisma.career.create({
+      data: {
+        name: 'Educación Primaria e Informática',
+        code: 'EP',
+        externalName: 'EDUCACIÓN ESPECIALIDAD PRIMARIA E INFORMÁTICA',
+        description: 'Carrera de Educación Especialidad Primaria e Informática',
+        facultyId: facultadEducacion.id,
+      },
+    });
+    console.log(`✅ Carrera creada: ${carreraEducacionPrimaria.name}`);
+
+    const carreraEnfermeria = await prisma.career.create({
+      data: {
+        name: 'Enfermería',
+        code: 'EN',
+        externalName: 'ENFERMERÍA',
+        description: 'Carrera de Enfermería',
+        facultyId: facultadEducacion.id,
+      },
+    });
+    console.log(`✅ Carrera creada: ${carreraEnfermeria.name}`);
 
     console.log('\n📝 Creando usuarios de ejemplo...');
     const hashedPassword = await bcrypt.hash('password123', 10);
@@ -200,24 +520,24 @@ async function seed() {
       `✅ Estudiante (doble carrera) creado: ${estudianteDobleCarrera.email}`,
     );
 
-    // Inscribir estudiante en 2 carreras
+    // Inscribir estudiante en 2 carreras (caso real de UNAMAD - doble carrera)
     await prisma.enrollment.create({
       data: {
         userId: estudianteDobleCarrera.id,
         careerId: carreraInformatica.id,
-        studentCode: 'IS2024001',
+        studentCode: '13121013', // Código real de estudiante
       },
     });
-    console.log('✅ Inscripción: Juan Pérez → Ingeniería de Sistemas');
+    console.log('✅ Inscripción: Juan Pérez → Ingeniería de Sistemas e Informática');
 
     await prisma.enrollment.create({
       data: {
         userId: estudianteDobleCarrera.id,
-        careerId: carreraElectronica.id,
-        studentCode: 'IE2024001',
+        careerId: carreraContabilidad.id,
+        studentCode: '20137013', // Código real de estudiante
       },
     });
-    console.log('✅ Inscripción: Juan Pérez → Ingeniería Electrónica');
+    console.log('✅ Inscripción: Juan Pérez → Contabilidad y Finanzas');
 
     // Create estudiante normal
     const estudiante2 = await prisma.user.create({
@@ -239,11 +559,11 @@ async function seed() {
     await prisma.enrollment.create({
       data: {
         userId: estudiante2.id,
-        careerId: carreraMatematica.id,
-        studentCode: 'MAT2024001',
+        careerId: carreraDerecho.id,
+        studentCode: 'DC2024001',
       },
     });
-    console.log('✅ Inscripción: Laura Sánchez → Matemática');
+    console.log('✅ Inscripción: Laura Sánchez → Derecho y Ciencias Políticas');
 
     console.log('\n📝 Creando tesis de ejemplo...');
     // Create thesis for estudiante doble carrera (en Sistemas)
@@ -257,7 +577,7 @@ async function seed() {
         careerId: carreraInformatica.id,
         authorId: estudianteDobleCarrera.id,
         advisorId: docente1.id,
-        status: 'EN_DESARROLLO',
+        status: ThesisStatus.EN_DESARROLLO,
       },
     });
     console.log(`✅ Tesis creada: ${thesis1.title.substring(0, 50)}...`);
@@ -304,15 +624,15 @@ async function seed() {
     // Create thesis for estudiante2
     const thesis2 = await prisma.thesis.create({
       data: {
-        title: 'Análisis de Convergencia de Series Infinitas en Espacios de Hilbert',
+        title: 'Análisis del Marco Legal de la Protección Ambiental en la Amazonía Peruana',
         description:
-          'Estudio teórico sobre la convergencia de series infinitas',
+          'Estudio jurídico sobre la normativa de protección ambiental en la región amazónica',
         academicDegree: AcademicDegree.LICENCIATURA,
-        careerId: carreraMatematica.id,
+        careerId: carreraDerecho.id,
         authorId: estudiante2.id,
         advisorId: docente2.id,
         coAdvisorId: docente1.id,
-        status: 'PROPUESTA',
+        status: ThesisStatus.BORRADOR,
       },
     });
     console.log(`✅ Tesis creada: ${thesis2.title.substring(0, 50)}...`);
@@ -331,20 +651,26 @@ async function seed() {
 
     console.log('\n✅ Seed completado exitosamente!');
     console.log('\n📊 Resumen:');
-    console.log('- 4 Roles');
-    console.log('- 2 Facultades');
-    console.log('- 3 Carreras');
+    console.log('- 4 Roles (ADMIN, COORDINADOR, DOCENTE, ESTUDIANTE)');
+    console.log('- 12 Módulos del sistema (Dashboard, Usuarios, Permisos, Tesis, etc.)');
+    console.log('- 24 Permisos rol-módulo configurados');
+    console.log('- 3 Facultades (Ingeniería, Ciencias Empresariales, Educación)');
+    console.log('- 12 Carreras (con externalName para match con API UNAMAD)');
     console.log('- 6 Usuarios (1 admin, 2 docentes, 1 coordinador, 2 estudiantes)');
-    console.log('- 1 Estudiante con doble carrera');
+    console.log('- 1 Estudiante con doble carrera (Sistemas + Contabilidad)');
     console.log('- 2 Tesis');
     console.log('- 4 Hitos');
     console.log('- 1 Comentario');
+    console.log('\n📋 Permisos por rol:');
+    console.log('  ADMIN: Dashboard, Usuarios, Permisos, Facultades, Carreras, Inscripciones, Tesis, Plazos, Reportes');
+    console.log('  COORDINADOR: Dashboard, Tesis, Carreras, Inscripciones, Plazos, Reportes, Revisiones');
+    console.log('  DOCENTE: Dashboard, Mis Asesorados, Revisiones, Gestión de Tesis (ver)');
+    console.log('  ESTUDIANTE: Dashboard, Mis Tesis');
     console.log('\n🔑 Credenciales de prueba:');
     console.log('Email: admin@universidad.edu | Password: password123');
+    console.log('Email: coordinador@universidad.edu | Password: password123');
     console.log('Email: docente1@universidad.edu | Password: password123');
-    console.log(
-      'Email: estudiante.doble@universidad.edu | Password: password123',
-    );
+    console.log('Email: estudiante.doble@universidad.edu | Password: password123');
 
     await prisma.$disconnect();
   } catch (error) {

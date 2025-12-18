@@ -12,7 +12,12 @@
       "Bash(netstat:*)",
       "Bash(findstr:*)",
       "Bash(taskkill /F /PID 14400)",
-      "Bash(npx tsx:*)"
+      "Bash(npx tsx:*)",
+      "Bash(del \"D:\\seguimiento de tesis\\backend-seguimiento-tesis\\check-db.ts\")",
+      "Bash(timeout 10 npm run start:prod)",
+      "Bash(dir:*)",
+      "Bash(npx nest:*)",
+      "Bash(npx nest g service:*)"
     ],
     "deny": [],
     "ask": []

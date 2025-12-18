@@ -37,6 +37,11 @@ export class UsersController {
     });
   }
 
+  @Get('roles')
+  async getRoles() {
+    return this.usersService.findAllRoles();
+  }
+
   @Get(':id')
   async findOne(@Param('id') id: string) {
     const user = await this.usersService.findOne(id);

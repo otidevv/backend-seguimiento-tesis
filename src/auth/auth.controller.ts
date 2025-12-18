@@ -8,7 +8,11 @@ import {
   Req,
   Get,
   Query,
+  Param,
+  NotFoundException,
+  BadRequestException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
@@ -21,11 +25,21 @@ import { MailService } from '../mail/mail.service';
 
 @Controller('auth')
 export class AuthController {
+  private readonly externalTeacherApiUrl: string;
+  private readonly externalApiToken: string;
+
   constructor(
     private readonly authService: AuthService,
     private readonly usersService: UsersService,
     private readonly mailService: MailService,
-  ) {}
+    private readonly configService: ConfigService,
+  ) {
+    this.externalTeacherApiUrl = this.configService.get<string>(
+      'EXTERNAL_TEACHER_API_URL',
+      'https://daa-documentos.unamad.edu.pe:8081/api/data/teacher',
+    );
+    this.externalApiToken = this.configService.get<string>('EXTERNAL_API_TOKEN', '');
+  }
 
   @Post('register')
   @Throttle({ default: { limit: 3, ttl: 60000 } }) // 3 requests per minute
@@ -88,11 +102,22 @@ export class AuthController {
   @Get('verify-email')
   @HttpCode(HttpStatus.OK)
   async verifyEmail(@Query('token') token: string) {
+    if (!token) {
+      throw new BadRequestException('Token de verificacion no proporcionado');
+    }
+
     const user = await this.usersService.verifyEmail(token);
-    await this.mailService.sendWelcomeEmail(user.email, user.firstName);
+
+    // Enviar correo de bienvenida (no debe fallar la verificacion si el correo falla)
+    try {
+      await this.mailService.sendWelcomeEmail(user.email, user.firstName);
+    } catch (error) {
+      console.error('Error al enviar correo de bienvenida:', error);
+      // No lanzar error, la verificacion fue exitosa
+    }
 
     return {
-      message: 'Email verified successfully',
+      message: 'Correo verificado exitosamente',
     };
   }
 
@@ -126,5 +151,75 @@ export class AuthController {
     return {
       message: 'Verification email sent',
     };
+  }
+
+  @Get('lookup-dni/:dni')
+  @Throttle({ default: { limit: 10, ttl: 60000 } }) // 10 requests per minute
+  @HttpCode(HttpStatus.OK)
+  async lookupDni(@Param('dni') dni: string) {
+    // Validar formato de DNI
+    if (!/^\d{8}$/.test(dni)) {
+      throw new BadRequestException('El DNI debe tener exactamente 8 dígitos');
+    }
+
+    // 1. Primero consultar la API de docentes
+    try {
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json',
+      };
+
+      if (this.externalApiToken) {
+        headers['Authorization'] = `Bearer ${this.externalApiToken}`;
+      }
+
+      const teacherResponse = await fetch(`${this.externalTeacherApiUrl}/${dni}`, { headers });
+
+      if (teacherResponse.ok) {
+        const teacherData = await teacherResponse.json();
+
+        // Si encontramos al docente, devolver sus datos con email
+        if (teacherData && teacherData.name) {
+          return {
+            dni: teacherData.dni,
+            firstName: teacherData.name,
+            paternalSurname: teacherData.paternalSurname,
+            maternalSurname: teacherData.maternalSurname,
+            email: teacherData.email, // Email institucional del docente
+            isTeacher: true,
+          };
+        }
+      }
+    } catch {
+      // Si falla la API de docentes, continuar con RENIEC
+    }
+
+    // 2. Si no es docente, consultar API de RENIEC
+    try {
+      const response = await fetch(`https://apidatos.unamad.edu.pe/api/consulta/${dni}`);
+
+      if (!response.ok) {
+        throw new NotFoundException('No se encontró información para este DNI');
+      }
+
+      const data = await response.json();
+
+      if (!data || !data.NOMBRES) {
+        throw new NotFoundException('No se encontró información para este DNI');
+      }
+
+      // Retornar solo los campos necesarios
+      return {
+        dni: data.DNI,
+        firstName: data.NOMBRES,
+        paternalSurname: data.AP_PAT,
+        maternalSurname: data.AP_MAT,
+        isTeacher: false,
+      };
+    } catch (error) {
+      if (error instanceof NotFoundException || error instanceof BadRequestException) {
+        throw error;
+      }
+      throw new BadRequestException('Error al consultar el servicio de RENIEC');
+    }
   }
 }

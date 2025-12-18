@@ -2,59 +2,168 @@ import {
   Injectable,
   NotFoundException,
   ConflictException,
+  Logger,
 } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
+import * as crypto from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
+import { EnrollmentsService } from '../enrollments/enrollments.service';
+import { MailService } from '../mail/mail.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { User, RoleEnum } from '@prisma/client';
 
 @Injectable()
 export class UsersService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly logger = new Logger(UsersService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly enrollmentsService: EnrollmentsService,
+    private readonly mailService: MailService,
+  ) {}
 
   async create(createUserDto: CreateUserDto): Promise<User> {
     // Check if email already exists
-    const existingUser = await this.prisma.user.findUnique({
+    const existingEmail = await this.prisma.user.findUnique({
       where: { email: createUserDto.email },
     });
 
-    if (existingUser) {
-      throw new ConflictException('Email already exists');
+    if (existingEmail) {
+      throw new ConflictException('El correo electrónico ya está registrado');
+    }
+
+    // Check if document number already exists
+    if (createUserDto.documentNumber) {
+      const existingDocument = await this.prisma.user.findUnique({
+        where: { documentNumber: createUserDto.documentNumber },
+      });
+
+      if (existingDocument) {
+        throw new ConflictException('El número de documento ya está registrado');
+      }
     }
 
     // Hash password
     const hashedPassword = await bcrypt.hash(createUserDto.password, 10);
 
-    // Get roles if provided or assign default user role
+    // Get roles if provided or determine based on external APIs
     let roleIds: string[] = [];
+    let enrollmentsCount = 0;
+    let shouldSyncEnrollments = false;
+    let isTeacher = false;
+
     if (createUserDto.roleIds && createUserDto.roleIds.length > 0) {
+      // Si se proporcionan roles explicitamente (ej: admin creando usuario), usarlos
       roleIds = createUserDto.roleIds;
-    } else {
-      // Assign default 'ESTUDIANTE' role
-      const estudianteRole = await this.prisma.role.findUnique({
-        where: { name: RoleEnum.ESTUDIANTE },
+      // Verificar si alguno de los roles es ESTUDIANTE para sincronizar despues
+      const roles = await this.prisma.role.findMany({
+        where: { id: { in: roleIds } },
       });
-      if (estudianteRole) {
-        roleIds = [estudianteRole.id];
+      shouldSyncEnrollments = roles.some((r) => r.name === RoleEnum.ESTUDIANTE);
+    } else {
+      // Auto-registro: determinar rol basado en APIs externas
+      if (createUserDto.documentNumber) {
+        // 1. PRIMERO verificar si es docente en la API de docentes
+        try {
+          this.logger.log(`Verificando si DNI ${createUserDto.documentNumber} es docente...`);
+          isTeacher = await this.enrollmentsService.checkIsTeacherFromExternalApi(createUserDto.documentNumber);
+          this.logger.log(`Resultado verificación docente: ${isTeacher}`);
+        } catch (error) {
+          this.logger.warn(`No se pudo verificar docente: ${error.message}`);
+          isTeacher = false;
+        }
+
+        // 2. Si NO es docente, verificar si tiene inscripciones como estudiante
+        if (!isTeacher) {
+          try {
+            this.logger.log(`Verificando inscripciones para DNI ${createUserDto.documentNumber}`);
+            enrollmentsCount = await this.enrollmentsService.checkEnrollmentsFromExternalApi(createUserDto.documentNumber);
+            this.logger.log(`Encontradas ${enrollmentsCount} inscripciones`);
+          } catch (error) {
+            this.logger.warn(`No se pudieron verificar inscripciones: ${error.message}`);
+            enrollmentsCount = 0;
+          }
+        }
       }
+
+      // Asignar rol según verificaciones:
+      // - Si está en API de docentes → DOCENTE
+      // - Si tiene inscripciones de estudiante → ESTUDIANTE
+      // - Si no está en ninguna API → ESTUDIANTE (por defecto)
+      let roleName: RoleEnum;
+      if (isTeacher) {
+        roleName = RoleEnum.DOCENTE;
+      } else if (enrollmentsCount > 0) {
+        roleName = RoleEnum.ESTUDIANTE;
+      } else {
+        roleName = RoleEnum.ESTUDIANTE; // Rol por defecto
+      }
+
+      const role = await this.prisma.role.findUnique({
+        where: { name: roleName },
+      });
+
+      if (role) {
+        roleIds = [role.id];
+        this.logger.log(`Asignando rol ${roleName} al usuario`);
+      }
+
+      // Si es estudiante con inscripciones, sincronizar despues de crear el usuario
+      shouldSyncEnrollments = !isTeacher && enrollmentsCount > 0;
     }
 
     // Create user with roles
     const user = await this.prisma.user.create({
       data: {
         email: createUserDto.email,
+        personalEmail: createUserDto.personalEmail,
         password: hashedPassword,
         firstName: createUserDto.firstName,
         lastName: createUserDto.lastName,
+        documentNumber: createUserDto.documentNumber,
+        phone: createUserDto.phone,
+        facultyId: createUserDto.facultyId,
         roles: {
           connect: roleIds.map((id) => ({ id })),
         },
       },
       include: {
         roles: true,
+        faculty: true,
       },
     });
+
+    // Sincronizar datos según el tipo de usuario
+    if (isTeacher && user.documentNumber) {
+      // Sincronizar datos del docente (facultad, departamento)
+      try {
+        this.logger.log(`Sincronizando datos de docente para ${user.documentNumber}`);
+        const syncResult = await this.enrollmentsService.syncTeacherFromExternalApi(user.id, user.documentNumber);
+        this.logger.log(`Docente sincronizado: ${syncResult.message}`);
+      } catch (error) {
+        this.logger.warn(`No se pudieron sincronizar datos del docente ${user.documentNumber}: ${error.message}`);
+      }
+    } else if (shouldSyncEnrollments && user.documentNumber) {
+      // Sincronizar inscripciones si es estudiante con DNI
+      try {
+        this.logger.log(`Sincronizando inscripciones para estudiante ${user.documentNumber}`);
+        const syncResult = await this.enrollmentsService.syncFromExternalApi(user.documentNumber);
+        this.logger.log(`Sincronizadas ${syncResult.enrollments.length} inscripciones para ${user.email}`);
+      } catch (error) {
+        this.logger.warn(`No se pudieron sincronizar inscripciones para ${user.documentNumber}: ${error.message}`);
+      }
+    }
+
+    // Generar token de verificacion y enviar correo
+    try {
+      const verificationToken = crypto.randomBytes(32).toString('hex');
+      await this.setEmailVerificationToken(user.id, verificationToken);
+      await this.mailService.sendEmailVerification(user.email, verificationToken);
+      this.logger.log(`Correo de verificacion enviado a ${user.email}`);
+    } catch (error) {
+      this.logger.warn(`No se pudo enviar correo de verificacion a ${user.email}: ${error.message}`);
+    }
 
     return user;
   }
@@ -63,6 +172,7 @@ export class UsersService {
     return await this.prisma.user.findMany({
       include: {
         roles: true,
+        faculty: true,
       },
     });
   }
@@ -72,6 +182,7 @@ export class UsersService {
       where: { id },
       include: {
         roles: true,
+        faculty: true,
       },
     });
 
@@ -87,6 +198,7 @@ export class UsersService {
       where: { email },
       include: {
         roles: true,
+        faculty: true,
       },
     });
   }
@@ -101,7 +213,18 @@ export class UsersService {
       });
 
       if (existingUser) {
-        throw new ConflictException('Email already exists');
+        throw new ConflictException('El correo electrónico ya está registrado');
+      }
+    }
+
+    // Check if document number is being updated and already exists
+    if (updateUserDto.documentNumber && updateUserDto.documentNumber !== user.documentNumber) {
+      const existingDocument = await this.prisma.user.findUnique({
+        where: { documentNumber: updateUserDto.documentNumber },
+      });
+
+      if (existingDocument) {
+        throw new ConflictException('El número de documento ya está registrado');
       }
     }
 
@@ -113,14 +236,20 @@ export class UsersService {
     // Prepare update data
     const updateData: any = {
       ...(updateUserDto.email && { email: updateUserDto.email }),
+      ...(updateUserDto.personalEmail !== undefined && { personalEmail: updateUserDto.personalEmail }),
       ...(updateUserDto.password && { password: updateUserDto.password }),
       ...(updateUserDto.firstName && { firstName: updateUserDto.firstName }),
       ...(updateUserDto.lastName && { lastName: updateUserDto.lastName }),
+      ...(updateUserDto.documentNumber !== undefined && { documentNumber: updateUserDto.documentNumber }),
+      ...(updateUserDto.phone !== undefined && { phone: updateUserDto.phone }),
       ...(updateUserDto.isActive !== undefined && {
         isActive: updateUserDto.isActive,
       }),
       ...(updateUserDto.isEmailVerified !== undefined && {
         isEmailVerified: updateUserDto.isEmailVerified,
+      }),
+      ...(updateUserDto.facultyId !== undefined && {
+        facultyId: updateUserDto.facultyId,
       }),
     };
 
@@ -137,6 +266,7 @@ export class UsersService {
       data: updateData,
       include: {
         roles: true,
+        faculty: true,
       },
     });
   }
@@ -145,6 +275,12 @@ export class UsersService {
     await this.findOne(id); // Check if user exists
     await this.prisma.user.delete({
       where: { id },
+    });
+  }
+
+  async findAllRoles() {
+    return await this.prisma.role.findMany({
+      orderBy: { name: 'asc' },
     });
   }
 
@@ -164,7 +300,7 @@ export class UsersService {
     });
 
     if (!user) {
-      throw new NotFoundException('Invalid verification token');
+      throw new NotFoundException('El enlace de verificacion es invalido o ya fue utilizado. Si ya verificaste tu correo, puedes iniciar sesion normalmente.');
     }
 
     return await this.prisma.user.update({

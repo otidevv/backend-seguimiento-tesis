@@ -2,6 +2,7 @@ import {
   Injectable,
   UnauthorizedException,
   ConflictException,
+  Logger,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
@@ -9,41 +10,41 @@ import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { UsersService } from '../users/users.service';
+import { MailService } from '../mail/mail.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { JwtPayload } from './strategies/jwt.strategy';
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     private readonly usersService: UsersService,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
     private readonly prisma: PrismaService,
+    private readonly mailService: MailService, // Usado para password reset
   ) {}
 
   async register(registerDto: RegisterDto) {
     try {
+      // El correo de verificacion se envia automaticamente en usersService.create()
       const user = await this.usersService.create(registerDto);
-
-      // Generate email verification token
-      const verificationToken = crypto.randomBytes(32).toString('hex');
-      await this.usersService.setEmailVerificationToken(
-        user.id,
-        verificationToken,
-      );
 
       const { password, ...result } = user;
 
       return {
         user: result,
-        verificationToken, // In production, send this via email instead of returning it
+        message: 'Usuario registrado exitosamente. Revisa tu correo para verificar tu cuenta.',
       };
     } catch (error) {
+      this.logger.error('Error en registro:', error);
       if (error instanceof ConflictException) {
         throw error;
       }
-      throw new Error('Registration failed');
+      // Re-throw con mensaje mas descriptivo
+      throw new ConflictException(error.message || 'Error al crear la cuenta. Intenta nuevamente.');
     }
   }
 
@@ -63,8 +64,12 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
+    if (!user.isEmailVerified) {
+      throw new UnauthorizedException('Debes verificar tu correo electronico antes de iniciar sesion. Revisa tu bandeja de entrada.');
+    }
+
     if (!user.isActive) {
-      throw new UnauthorizedException('Account is inactive');
+      throw new UnauthorizedException('Tu cuenta esta inactiva. Contacta al administrador.');
     }
 
     // Generate tokens
@@ -72,6 +77,7 @@ export class AuthService {
       user.id,
       user.email,
       (user as any).roles,
+      (user as any).facultyId ?? undefined,
     );
 
     // Save refresh token
@@ -106,6 +112,7 @@ export class AuthService {
       tokenRecord.user.id,
       tokenRecord.user.email,
       tokenRecord.user.roles,
+      tokenRecord.user.facultyId ?? undefined,
     );
 
     // Revoke old refresh token
@@ -150,6 +157,7 @@ export class AuthService {
     userId: string,
     email: string,
     roles: any[],
+    facultyId?: string,
   ): Promise<{ accessToken: string; refreshToken: string }> {
     const roleNames = roles.map((role) => role.name);
 
@@ -157,6 +165,7 @@ export class AuthService {
       sub: userId,
       email,
       roles: roleNames,
+      facultyId,
     };
 
     // Generate access token
@@ -206,7 +215,7 @@ export class AuthService {
     if (!user) {
       // Don't reveal if user exists
       return {
-        message: 'If the email exists, a reset link will be sent',
+        message: 'Si el correo existe, se enviara un enlace de recuperacion',
       };
     }
 
@@ -216,9 +225,16 @@ export class AuthService {
 
     await this.usersService.setPasswordResetToken(email, resetToken, expiresAt);
 
+    // Send password reset email
+    try {
+      await this.mailService.sendPasswordResetEmail(user.email, resetToken);
+      this.logger.log(`Correo de recuperacion enviado a ${user.email}`);
+    } catch (emailError) {
+      this.logger.error(`Error al enviar correo de recuperacion a ${user.email}:`, emailError);
+    }
+
     return {
-      message: 'If the email exists, a reset link will be sent',
-      resetToken, // In production, send this via email instead of returning it
+      message: 'Si el correo existe, se enviara un enlace de recuperacion',
     };
   }
 

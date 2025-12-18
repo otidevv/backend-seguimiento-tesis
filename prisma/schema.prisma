@@ -17,15 +17,25 @@ enum RoleEnum {
   ESTUDIANTE
 }
 
-// Enum for thesis status
+// Enum for thesis status (siguiendo flujo del proceso)
 enum ThesisStatus {
-  PROPUESTA
-  EN_DESARROLLO
-  EN_REVISION
-  OBSERVADA
-  APROBADA
-  SUSTENTADA
-  FINALIZADA
+  BORRADOR // Tesista preparando documentos
+  PRESENTADA // Presentado en Mesa de Partes
+  REGISTRADA // Registrado por Mesa de Partes
+  DERIVADA_ESCUELA // Decanatura derivó a Escuela Profesional
+  COMISION_ASIGNADA // Director asignó comisión revisora
+  EN_EVALUACION // Comisión evaluando (15 días hábiles)
+  OBSERVADA // Dictamen con observaciones
+  LEVANTANDO_OBS // Tesista levantando observaciones (30+30 días)
+  APROBADA // Dictamen aprobatorio
+  RESOLUCION_EMITIDA // Resolución de aprobación emitida
+  EN_DESARROLLO // Tesis en desarrollo post-aprobación
+  EN_REVISION_FINAL // Revisión final antes de sustentación
+  APTA_SUSTENTACION // Lista para sustentar
+  SUSTENTADA // Sustentación realizada
+  FINALIZADA // Proceso completado
+  RECHAZADA // Rechazada definitivamente
+  PLAZO_VENCIDO // Plazo vencido, debe reiniciar
 }
 
 // Enum for academic degree
@@ -36,49 +46,152 @@ enum AcademicDegree {
   DOCTORADO
 }
 
+// Enum for jury roles
+enum JuryRole {
+  PRESIDENTE
+  VOCAL
+  SECRETARIO
+  ACCESITARIO
+}
+
+// Enum for review decision (dictamen de la comisión)
+enum ReviewDecision {
+  APROBADO // Dictamen favorable
+  OBSERVADO // Dictamen con observaciones
+  RECHAZADO // Dictamen desfavorable
+  PENDIENTE // Aún no emite dictamen
+}
+
+// Enum for deadline types (tipos de plazos)
+enum DeadlineType {
+  EVALUACION_COMISION // 15 días hábiles para la comisión
+  LEVANTAMIENTO_OBS // 30 días calendario para tesista
+  AMPLIACION_OBS // 30 días adicionales
+  REVISION_CORRECCION // Revisión de correcciones
+  SUSTENTACION // Fecha de sustentación
+}
+
+// Enum for deadline status
+enum DeadlineStatus {
+  ACTIVO // Plazo vigente
+  CUMPLIDO // Se cumplió a tiempo
+  VENCIDO // Plazo vencido sin cumplir
+  CANCELADO // Plazo cancelado
+  EXTENDIDO // Se extendió el plazo
+}
+
+// Enum for permission actions
+enum PermissionAction {
+  CREATE
+  READ
+  UPDATE
+  DELETE
+  MANAGE // Todos los permisos
+}
+
+// Enum for PDF annotation types
+enum AnnotationType {
+  HIGHLIGHT // Resaltado de texto
+  RECTANGLE // Area rectangular marcada
+  TEXT_COMMENT // Comentario sobre texto seleccionado
+}
+
 // User model
 model User {
-  id                      String         @id @default(uuid())
-  email                   String         @unique
-  personalEmail           String?        // Email personal adicional
-  password                String
-  firstName               String
-  lastName                String
-  documentNumber          String?        @unique // DNI, passport, etc.
-  phone                   String?
-  isEmailVerified         Boolean        @default(false)
-  emailVerificationToken  String?
-  passwordResetToken      String?
-  passwordResetExpires    DateTime?
-  isActive                Boolean        @default(true)
-  createdAt               DateTime       @default(now())
-  updatedAt               DateTime       @updatedAt
+  id                     String    @id @default(uuid())
+  email                  String    @unique
+  personalEmail          String? // Email personal adicional
+  password               String
+  firstName              String
+  lastName               String
+  documentNumber         String?   @unique // DNI, passport, etc.
+  phone                  String?
+  isEmailVerified        Boolean   @default(false)
+  emailVerificationToken String?
+  passwordResetToken     String?
+  passwordResetExpires   DateTime?
+  isActive               Boolean   @default(true)
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+
+  // Campos para docentes (sincronizados desde API externa)
+  facultyId          String? // Facultad del docente
+  academicDepartment String? // Departamento académico del docente
+  teacherCode        String? // Código de docente (userName de la API)
 
   // Relations
-  roles                   Role[]
-  refreshTokens           RefreshToken[]
-  enrollments             Enrollment[]   // Estudiante puede estar en múltiples carreras
-  thesesAsAuthor          Thesis[]       @relation("ThesisAuthor")
-  thesesAsAdvisor         Thesis[]       @relation("ThesisAdvisor")
-  thesesAsCoAdvisor       Thesis[]       @relation("ThesisCoAdvisor")
-  comments                Comment[]
-  notifications           Notification[]
+  roles             Role[]
+  refreshTokens     RefreshToken[]
+  faculty           Faculty?     @relation(fields: [facultyId], references: [id])
+  enrollments       Enrollment[] // Estudiante puede estar en múltiples carreras
+  thesesAsAuthor    Thesis[]              @relation("ThesisAuthor")
+  thesesAsCoAuthor  Thesis[]              @relation("ThesisCoAuthor")
+  thesesAsAdvisor   Thesis[]              @relation("ThesisAdvisor")
+  thesesAsCoAdvisor Thesis[]              @relation("ThesisCoAdvisor")
+  comments          Comment[]
+  notifications     Notification[]
+  juryAssignments   JuryMember[] // Asignaciones como jurado
+  statusChanges     ThesisStatusHistory[] // Cambios de estado realizados
+  resolutionsIssued Resolution[] // Resoluciones emitidas (Decano/Admin)
+  pdfAnnotations    PdfAnnotation[] // Anotaciones en PDFs
+  annotationReplies AnnotationReply[] // Respuestas a anotaciones
+  signedDocuments   SignedDocument[] // Documentos firmados subidos (Presidente)
 
   @@map("users")
 }
 
 // Role model
 model Role {
-  id          String    @id @default(uuid())
-  name        RoleEnum  @unique
+  id          String   @id @default(uuid())
+  name        RoleEnum @unique
   description String?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   // Relations
   users       User[]
+  permissions RoleModulePermission[]
 
   @@map("roles")
+}
+
+// Module model (Módulos del sistema)
+model Module {
+  id          String   @id @default(uuid())
+  name        String   @unique // Nombre técnico: "users", "theses", "dashboard"
+  displayName String // Nombre para mostrar: "Gestión de Usuarios", "Tesis"
+  description String?
+  icon        String? // Icono del módulo (ej: "users", "file-text")
+  route       String? // Ruta del frontend: "/admin/users", "/tesis"
+  parentId    String? // Para submodulos
+  order       Int      @default(0) // Orden de aparición en menú
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  parent      Module?                @relation("ModuleHierarchy", fields: [parentId], references: [id])
+  children    Module[]               @relation("ModuleHierarchy")
+  permissions RoleModulePermission[]
+
+  @@map("modules")
+}
+
+// RoleModulePermission model (Permisos de roles sobre módulos)
+model RoleModulePermission {
+  id        String           @id @default(uuid())
+  roleId    String
+  moduleId  String
+  action    PermissionAction
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+
+  // Relations
+  role   Role   @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  module Module @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, moduleId, action]) // Un rol solo puede tener un permiso específico por módulo
+  @@map("role_module_permissions")
 }
 
 // RefreshToken model
@@ -91,37 +204,40 @@ model RefreshToken {
   createdAt DateTime @default(now())
 
   // Relations
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("refresh_tokens")
 }
 
 // Faculty model
 model Faculty {
-  id          String   @id @default(uuid())
-  name        String   @unique
-  code        String   @unique
-  description String?
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id           String   @id @default(uuid())
+  name         String   @unique // Nombre para mostrar: "Facultad de Ingeniería"
+  code         String   @unique // Código interno: "FI"
+  externalName String?  @unique // Nombre exacto de API externa: "INGENIERIA"
+  description  String?
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
   // Relations
-  careers     Career[]
+  careers  Career[]
+  teachers User[] // Docentes asignados a esta facultad
 
   @@map("faculties")
 }
 
 // Career model (Carrera)
 model Career {
-  id          String   @id @default(uuid())
-  name        String
-  code        String   @unique
-  description String?
-  facultyId   String
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id           String   @id @default(uuid())
+  name         String // Nombre para mostrar: "Ingeniería de Sistemas"
+  code         String   @unique // Código interno: "IS"
+  externalName String?  @unique // Nombre exacto de API externa: "INGENIERÍA DE SISTEMAS E INFORMÁTICA"
+  description  String?
+  facultyId    String
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
   // Relations
   faculty     Faculty      @relation(fields: [facultyId], references: [id])
@@ -137,20 +253,20 @@ model Enrollment {
   userId                String
   careerId              String
   studentCode           String    @unique // Código de estudiante (username de API: "20137013", "13121013")
-  creditsApproved       Decimal?  // totalCreditsApproved de API
-  lastAcademicPeriod    String?   // Último período matriculado (ej: "2019-1")
-  academicPeriodId      String?   // ID del período académico de la API
+  creditsApproved       Decimal? // totalCreditsApproved de API
+  lastAcademicPeriod    String? // Último período matriculado (ej: "2019-1")
+  academicPeriodId      String? // ID del período académico de la API
   enrollmentDate        DateTime  @default(now())
   isActive              Boolean   @default(true)
   syncedFromExternalApi Boolean   @default(false) // Indica si vino de API externa
-  externalApiData       String?   // JSON con datos completos de la API (opcional)
+  externalApiData       String? // JSON con datos completos de la API (opcional)
   lastSyncAt            DateTime? // Última sincronización con API externa
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
 
   // Relations
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  career       Career   @relation(fields: [careerId], references: [id])
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  career Career @relation(fields: [careerId], references: [id])
 
   @@unique([userId, careerId]) // Un usuario solo puede estar inscrito una vez por carrera
   @@map("enrollments")
@@ -158,34 +274,64 @@ model Enrollment {
 
 // Thesis model
 model Thesis {
-  id                String         @id @default(uuid())
-  title             String
-  description       String?
-  status            ThesisStatus   @default(PROPUESTA)
-  academicDegree    AcademicDegree
-  careerId          String
-  authorId          String
-  advisorId         String
-  coAdvisorId       String?
-  startDate         DateTime       @default(now())
-  proposalDate      DateTime?
-  approvalDate      DateTime?
-  defenseDate       DateTime?
-  finalDocument     String?        // URL o path al documento final
-  isActive          Boolean        @default(true)
-  createdAt         DateTime       @default(now())
-  updatedAt         DateTime       @updatedAt
+  id             String         @id @default(uuid())
+  title          String
+  description    String?
+  status         ThesisStatus   @default(BORRADOR)
+  academicDegree AcademicDegree
+  careerId       String
+  authorId       String
+  coAuthorId     String?        // Co-autor (segundo tesista)
+  advisorId      String
+  coAdvisorId    String?
+  startDate      DateTime       @default(now())
+  proposalDate   DateTime?
+  approvalDate   DateTime?
+  defenseDate    DateTime?
+  finalDocument  String? // URL o path al documento final
+  isActive       Boolean        @default(true)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
 
   // Relations
-  career            Career         @relation(fields: [careerId], references: [id])
-  author            User           @relation("ThesisAuthor", fields: [authorId], references: [id])
-  advisor           User           @relation("ThesisAdvisor", fields: [advisorId], references: [id])
-  coAdvisor         User?          @relation("ThesisCoAdvisor", fields: [coAdvisorId], references: [id])
-  milestones        Milestone[]
-  comments          Comment[]
-  documents         Document[]
+  career        Career                @relation(fields: [careerId], references: [id])
+  author        User                  @relation("ThesisAuthor", fields: [authorId], references: [id])
+  coAuthor      User?                 @relation("ThesisCoAuthor", fields: [coAuthorId], references: [id])
+  advisor       User                  @relation("ThesisAdvisor", fields: [advisorId], references: [id])
+  coAdvisor     User?                 @relation("ThesisCoAdvisor", fields: [coAdvisorId], references: [id])
+  milestones    Milestone[]
+  comments      Comment[]
+  documents     Document[]
+  juryMembers     JuryMember[]
+  reviews         Review[] // Dictámenes de la comisión
+  statusHistory   ThesisStatusHistory[] // Historial de estados
+  deadlines       Deadline[] // Plazos activos
+  resolutions     Resolution[] // Resoluciones emitidas
+  pdfAnnotations  PdfAnnotation[] // Anotaciones en documentos PDF
+  signedDocuments SignedDocument[] // Documentos firmados por jurado
 
   @@map("theses")
+}
+
+// JuryMember model (Jurados asignados a la tesis)
+model JuryMember {
+  id         String   @id @default(uuid())
+  thesisId   String
+  userId     String
+  role       JuryRole
+  assignedAt DateTime @default(now())
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  // Relations
+  thesis  Thesis   @relation(fields: [thesisId], references: [id], onDelete: Cascade)
+  user    User     @relation(fields: [userId], references: [id])
+  reviews Review[] // Dictámenes emitidos por este jurado
+
+  @@unique([thesisId, role]) // Solo un jurado por rol en cada tesis
+  @@unique([thesisId, userId]) // Un usuario solo puede tener un rol por tesis
+  @@map("jury_members")
 }
 
 // Milestone model (Hitos/Etapas de la tesis)
@@ -202,7 +348,7 @@ model Milestone {
   updatedAt   DateTime  @updatedAt
 
   // Relations
-  thesis      Thesis    @relation(fields: [thesisId], references: [id], onDelete: Cascade)
+  thesis Thesis @relation(fields: [thesisId], references: [id], onDelete: Cascade)
 
   @@map("milestones")
 }
@@ -218,8 +364,8 @@ model Comment {
   updatedAt DateTime @updatedAt
 
   // Relations
-  thesis    Thesis   @relation(fields: [thesisId], references: [id], onDelete: Cascade)
-  user      User     @relation(fields: [userId], references: [id])
+  thesis Thesis @relation(fields: [thesisId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id])
 
   @@map("comments")
 }
@@ -238,7 +384,8 @@ model Document {
   updatedAt   DateTime @updatedAt
 
   // Relations
-  thesis      Thesis   @relation(fields: [thesisId], references: [id], onDelete: Cascade)
+  thesis      Thesis          @relation(fields: [thesisId], references: [id], onDelete: Cascade)
+  annotations PdfAnnotation[] // Anotaciones sobre este documento
 
   @@map("documents")
 }
@@ -253,7 +400,159 @@ model Notification {
   createdAt DateTime @default(now())
 
   // Relations
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("notifications")
+}
+
+// Review model (Dictamen de la comisión revisora)
+model Review {
+  id           String         @id @default(uuid())
+  thesisId     String
+  juryMemberId String // Miembro del jurado que emite el dictamen
+  decision     ReviewDecision @default(PENDIENTE)
+  observations String? // Observaciones detalladas
+  comments     String? // Comentarios adicionales
+  reviewNumber Int            @default(1) // Número de revisión (1ra, 2da, etc.)
+  reviewedAt   DateTime? // Fecha en que se emitió el dictamen
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  // Relations
+  thesis     Thesis     @relation(fields: [thesisId], references: [id], onDelete: Cascade)
+  juryMember JuryMember @relation(fields: [juryMemberId], references: [id])
+
+  @@unique([thesisId, juryMemberId, reviewNumber]) // Un jurado solo puede tener un dictamen por revisión
+  @@map("reviews")
+}
+
+// ThesisStatusHistory model (Historial de cambios de estado)
+model ThesisStatusHistory {
+  id             String        @id @default(uuid())
+  thesisId       String
+  previousStatus ThesisStatus?
+  newStatus      ThesisStatus
+  changedById    String // Usuario que realizó el cambio
+  reason         String? // Motivo del cambio
+  metadata       String? // JSON con datos adicionales (oficios, resoluciones, etc.)
+  createdAt      DateTime      @default(now())
+
+  // Relations
+  thesis    Thesis @relation(fields: [thesisId], references: [id], onDelete: Cascade)
+  changedBy User   @relation(fields: [changedById], references: [id])
+
+  @@map("thesis_status_history")
+}
+
+// Deadline model (Control de plazos)
+model Deadline {
+  id           String         @id @default(uuid())
+  thesisId     String
+  type         DeadlineType
+  status       DeadlineStatus @default(ACTIVO)
+  startDate    DateTime       @default(now())
+  dueDate      DateTime // Fecha límite
+  completedAt  DateTime? // Fecha en que se cumplió
+  businessDays Int? // Días hábiles (para plazos en días hábiles)
+  calendarDays Int? // Días calendario (para plazos en días calendario)
+  extensionOf  String? // ID del deadline que extiende (para ampliaciones)
+  notes        String?
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  // Relations
+  thesis     Thesis     @relation(fields: [thesisId], references: [id], onDelete: Cascade)
+  extension  Deadline?  @relation("DeadlineExtension", fields: [extensionOf], references: [id])
+  extensions Deadline[] @relation("DeadlineExtension")
+
+  @@map("deadlines")
+}
+
+// Resolution model (Resoluciones oficiales)
+model Resolution {
+  id               String   @id @default(uuid())
+  thesisId         String
+  resolutionNumber String   @unique // Número de resolución
+  type             String // Tipo: APROBACION_PROYECTO, DESIGNACION_JURADO, SUSTENTACION, etc.
+  description      String
+  documentUrl      String? // URL del documento de resolución
+  issuedAt         DateTime // Fecha de emisión
+  issuedById       String // Usuario que emitió (Decano/Admin)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  // Relations
+  thesis   Thesis @relation(fields: [thesisId], references: [id], onDelete: Cascade)
+  issuedBy User   @relation(fields: [issuedById], references: [id])
+
+  @@map("resolutions")
+}
+
+// PdfAnnotation model (Anotaciones en PDFs para revision colaborativa)
+model PdfAnnotation {
+  id         String         @id @default(uuid())
+  documentId String
+  userId     String
+  thesisId   String
+  type       AnnotationType
+  content    String? // Texto del comentario
+  color      String // Color del jurado (#3B82F6 azul, #10B981 verde, #F59E0B naranja)
+  pageNumber Int
+  textRanges String? // JSON con rangos de texto para highlights
+  x          Float? // Posicion X (porcentaje) para rectangulos
+  y          Float? // Posicion Y (porcentaje) para rectangulos
+  width      Float? // Ancho (porcentaje) para rectangulos
+  height     Float? // Alto (porcentaje) para rectangulos
+  isResolved Boolean        @default(false)
+  createdAt  DateTime       @default(now())
+  updatedAt  DateTime       @updatedAt
+
+  // Relations
+  document Document          @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  user     User              @relation(fields: [userId], references: [id])
+  thesis   Thesis            @relation(fields: [thesisId], references: [id], onDelete: Cascade)
+  replies  AnnotationReply[]
+
+  @@index([documentId])
+  @@index([thesisId])
+  @@map("pdf_annotations")
+}
+
+// AnnotationReply model (Respuestas a anotaciones)
+model AnnotationReply {
+  id           String   @id @default(uuid())
+  annotationId String
+  userId       String
+  content      String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relations
+  annotation PdfAnnotation @relation(fields: [annotationId], references: [id], onDelete: Cascade)
+  user       User          @relation(fields: [userId], references: [id])
+
+  @@index([annotationId])
+  @@map("annotation_replies")
+}
+
+// SignedDocument model (Documentos firmados por el jurado)
+model SignedDocument {
+  id         String   @id @default(uuid())
+  thesisId   String
+  uploadedBy String // Solo el Presidente puede subir
+  title      String
+  description String?
+  fileUrl    String
+  fileType   String
+  fileSize   Int
+  uploadedAt DateTime @default(now())
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  // Relations
+  thesis   Thesis @relation(fields: [thesisId], references: [id], onDelete: Cascade)
+  uploader User   @relation(fields: [uploadedBy], references: [id])
+
+  @@index([thesisId])
+  @@map("signed_documents")
 }
